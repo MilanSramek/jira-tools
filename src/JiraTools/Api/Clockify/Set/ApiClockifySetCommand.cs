@@ -9,7 +9,7 @@ internal sealed class ApiClockifySetCommand : Command
 {
     public ApiClockifySetCommand() : base("set", "Set Clockify connection options")
     {
-        var apiTokenOption = new Option<string>("--api-key", "-t")
+        var apiTokenOption = new Option<string>("--api-key", "-k")
         {
             Description = "User API token",
         };

@@ -21,7 +21,7 @@ internal sealed class ApiJiraSetCommand : Command
         };
         Options.Add(emailOption);
 
-        var apiKeyOption = new Option<string>("--api-key", "-t")
+        var apiKeyOption = new Option<string>("--api-key", "-k")
         {
             Description = "User API key",
         };
