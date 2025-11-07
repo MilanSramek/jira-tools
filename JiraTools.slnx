@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/JiraTools/JiraTools.csproj" />
+  <Project Path="src/Clockify/Clockify.csproj" />
+  <Project Path="src/Jira/Jira.csproj" />
+</Solution>
