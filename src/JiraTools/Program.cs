@@ -11,9 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
-string[] _args_ = ["timesheet", "import", "--source", "Clockify", "--period", "Week"];
-// string[] _args_ = ["api", "Jira", "set", "--api-key", "NDZlZTRiZjAtMDkxZC00NTM2LTg0OTktNTcyYTUyNjI2ZmMw"];
-IHost host = Host.CreateDefaultBuilder(_args_)
+IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
         config.AddJsonFile(SettingsFile.FilePath, optional: true, reloadOnChange: true);
@@ -36,7 +34,7 @@ var config = host.Services.GetService<IOptions<ClockifyOptions>>();
 var jiraConfig = host.Services.GetService<IOptions<JiraOptions>>();
 
 JiraToolsRootCommand rootCommand = host.Services.GetRequiredService<JiraToolsRootCommand>();
-ParseResult parseResult = rootCommand.Parse(_args_);
+ParseResult parseResult = rootCommand.Parse(args);
 
 IHostApplicationLifetime lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
 await parseResult.InvokeAsync(cancellationToken: lifetime.ApplicationStopping);
