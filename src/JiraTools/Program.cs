@@ -9,14 +9,13 @@ using JiraTools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 
 string[] _args_ = ["timesheet", "import", "--source", "Clockify", "--period", "Week"];
 IHost host = Host.CreateDefaultBuilder(_args_)
     .ConfigureAppConfiguration((context, config) =>
     {
-        config.AddJsonFile(SettingsFile.FilePath, optional: true, reloadOnChange: true);
-        config.AddJsonFile(SecretsFile.FilePath, optional: true, reloadOnChange: true);
+        config.AddJsonFile(SettingsFile.FilePath, optional: true, reloadOnChange: false);
+        config.AddJsonFile(SecretsFile.FilePath, optional: true, reloadOnChange: false);
     })
     .ConfigureServices((context, services) =>
     {
@@ -30,9 +29,6 @@ IHost host = Host.CreateDefaultBuilder(_args_)
             .Bind(context.Configuration.GetSection(JiraOptions.SectionName));
     })
     .Build();
-
-var config = host.Services.GetService<IOptions<ClockifyOptions>>();
-var jiraConfig = host.Services.GetService<IOptions<JiraOptions>>();
 
 JiraToolsRootCommand rootCommand = host.Services.GetRequiredService<JiraToolsRootCommand>();
 ParseResult parseResult = rootCommand.Parse(_args_);

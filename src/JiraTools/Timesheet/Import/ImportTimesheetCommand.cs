@@ -1,21 +1,21 @@
 using System.CommandLine;
 
 using JiraTools.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace JiraTools.Timesheet.Import;
 
 internal sealed class ImportTimesheetCommand : Command
 {
-    private readonly ClockifyTimesheetImporter _clockifyTimesheetImport;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _timeProvider;
 
     public ImportTimesheetCommand(
-        ClockifyTimesheetImporter clockifyTimesheetImport,
+        IServiceScopeFactory scopeFactory,
         TimeProvider timeProvider)
         : base("import", "Import timesheet data to Jira")
     {
-        _clockifyTimesheetImport = clockifyTimesheetImport
-            ?? throw new ArgumentNullException(nameof(clockifyTimesheetImport));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 
         Setup();
@@ -49,14 +49,17 @@ internal sealed class ImportTimesheetCommand : Command
         });
     }
 
-    private Task ExecuteAsync(
+    private async Task ExecuteAsync(
         TimesheetImportSource timesheetSource,
         TimesheetImportTimePeriod importTimePeriod,
         CancellationToken cancellationToken)
     {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var serviceProvider = scope.ServiceProvider;
+
         var timesheetImporter = timesheetSource switch
         {
-            TimesheetImportSource.Clockify => _clockifyTimesheetImport,
+            TimesheetImportSource.Clockify => serviceProvider.GetRequiredService<ClockifyTimesheetImporter>(),
             _ => throw new NotSupportedException($"Timesheet source '{timesheetSource}' is not supported.")
         };
 
@@ -68,7 +71,7 @@ internal sealed class ImportTimesheetCommand : Command
             _ => throw new NotSupportedException("Unsupported period")
         };
 
-        return timesheetImporter.ExecuteAsync(
+        await timesheetImporter.ExecuteAsync(
             new TimesheetImportSettings(
                 From: importFrom,
                 To: importTo),
