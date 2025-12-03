@@ -27,7 +27,7 @@ internal sealed class ClockifyTimesheetImporter
     private readonly record struct ReconciliationResult
     (
         IEnumerable<(JiraIssueKey Key, CreateJiraWorklogRequest Request)> ToCreate,
-        IEnumerable<JiraWorklog> ToDelete
+        IEnumerable<JiraTimesheetEntry> ToDelete
     );
 
     public async Task ExecuteAsync(TimesheetImportSettings settings,
@@ -49,7 +49,26 @@ internal sealed class ClockifyTimesheetImporter
         var (toCreate, toDelete) = ReconcileTimesheetEntries(clockifyTimesheet, jiraTimesheet);
         if (toDelete.Any())
         {
-            throw new Exception("Import failed. Some existing issues do not align.");
+            Console.Error.WriteLine("Error: Import cannot proceed because some existing issues do not align.");
+            foreach (var worklog in toDelete)
+            {
+                Console.Error.WriteLine(
+                    $"- Issue: {worklog.Issue.Key}, "
+                    + $"Started: {worklog.Worklog.Started:d}, "
+                    + $"Time Spent: {worklog.Worklog.TimeSpent}, "
+                    + $"Comment: {worklog.Worklog.Comment?.GetText() ?? "<no comment>"}");
+            }
+            Console.Out.WriteLine("Warning: The following worklogs will not be created:");
+            foreach (var (Key, Request) in toCreate)
+            {
+                Console.Out.WriteLine(
+                    $"- Issue: {Key}, "
+                    + $"Started: {Request.Started:d}, "
+                    + $"Time Spent: {Request.TimeSpent}, "
+                    + $"Comment: {Request.Comment?.GetText() ?? "<no comment>"}");   
+            }
+            return;
+            // throw new Exception("Import failed. Some existing issues do not align.");
         }
 
         var createJiraWorklogTasks = toCreate
@@ -64,8 +83,8 @@ internal sealed class ClockifyTimesheetImporter
         IEnumerable<ClockifyTimesheetEntry> clockifyTimesheet,
         IEnumerable<JiraTimesheetEntry> jiraTimesheet)
     {
-        var jiraEntries = jiraTimesheet
-            .ToDictionary(entry =>
+        Dictionary<(JiraIssueKey, string?, DateOnly, TimeSpan TimeSpent), JiraTimesheetEntry> jiraEntries = jiraTimesheet
+            .ToDictionary(entry => 
             (
                 new JiraIssueKey(entry.Issue.Key),
                 entry.Worklog.Comment?.GetText(),
@@ -76,14 +95,15 @@ internal sealed class ClockifyTimesheetImporter
         var toCreate = new List<(JiraIssueKey, CreateJiraWorklogRequest)>();
         foreach (var clockifyEntry in clockifyTimesheet)
         {
+            var clockifyEntryName = ClockifyTaskName.Parse(clockifyEntry.Task!.Name).Value;
             var jiraIssueKey = JiraIssueKey.FromClockifyTask(
                 clockifyEntry.Project,
-                ClockifyTaskName.Parse(clockifyEntry.Task!.Name).Value);
+                clockifyEntryName);
             var timeSpent = clockifyEntry.TimeEntry.TimeInterval.End!.Value
                 - clockifyEntry.TimeEntry.TimeInterval.Start;
             var description = !string.IsNullOrWhiteSpace(clockifyEntry.TimeEntry.Description)
                 ? clockifyEntry.TimeEntry.Description.Trim()
-                : null;
+                : clockifyEntryName.Hint?.Trim();
 
             var entryKey =
             (
@@ -107,13 +127,10 @@ internal sealed class ClockifyTimesheetImporter
             }));
         }
 
-        var toDelete = jiraEntries.Values
-            .Select(entry => entry.Worklog);
-
         return new ReconciliationResult
         {
             ToCreate = toCreate,
-            ToDelete = toDelete
+            ToDelete = jiraEntries.Values
         };
     }
 

@@ -16,7 +16,7 @@ internal sealed class ClockifyTimesheetProvider
         DateOnly to,
         CancellationToken cancellationToken)
     {
-        ClockifyTimeEntry[] timeEntries = await timeEntryApi.GetTimeEntriesAsync(
+        ClockifyTimeEntry[] timeEntries = await timeEntryApi.GetAllTimeEntriesAsync(
             workspaceId: workspaceId,
             userId: userId,
             start: from.ToDateTime(TimeOnly.MinValue),
