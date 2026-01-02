@@ -39,19 +39,30 @@ internal sealed class ImportTimesheetCommand : Command
         importPeriodOption.AcceptOnlyFromAmong(typeof(TimesheetImportTimePeriod).GetEnumNames());
         Options.Add(importPeriodOption);
 
+        Option<DateOnly> importAnchorDate = new("--anchor", "-a")
+        {
+            Description = "Anchor date for the period to import (default: current date; format: YYYY-MM-DD)",
+            Required = false,
+            DefaultValueFactory = _ => DateOnly.FromDateTime(_timeProvider.GetLocalNow().Date)
+        };
+        Options.Add(importAnchorDate);
+
         TreatUnmatchedTokensAsErrors = true;
 
         SetAction((context, cancellationToken) =>
         {
             var timesheetSource = context.GetRequiredValue(timesheetSourceOption);
-            var importPeriod = context.GetRequiredValue(importPeriodOption);
-            return ExecuteAsync(timesheetSource, importPeriod, cancellationToken);
+            var importPeriod = context.GetRequiredValue(importPeriodOption); 
+            var anchorDate = context.GetRequiredValue(importAnchorDate);  
+
+            return ExecuteAsync(timesheetSource, importPeriod, anchorDate, cancellationToken);
         });
     }
 
     private async Task ExecuteAsync(
         TimesheetImportSource timesheetSource,
         TimesheetImportTimePeriod importTimePeriod,
+        DateOnly anchorDate,
         CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
@@ -65,9 +76,9 @@ internal sealed class ImportTimesheetCommand : Command
 
         var (importFrom, importTo) = importTimePeriod switch
         {
-            TimesheetImportTimePeriod.Day => _timeProvider.GetCurrentDayDateRange(),
-            TimesheetImportTimePeriod.Week => _timeProvider.GetCurrentWeekDateRange(),
-            TimesheetImportTimePeriod.Month => _timeProvider.GetCurrentMonthDateRange(),
+            TimesheetImportTimePeriod.Day => anchorDate.GetSurroundingDayDateRange(),
+            TimesheetImportTimePeriod.Week => anchorDate.GetSurroundingWeekDateRange(),
+            TimesheetImportTimePeriod.Month => anchorDate.GetSurroundingMonthDateRange(),
             _ => throw new NotSupportedException("Unsupported period")
         };
 

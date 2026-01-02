@@ -9,7 +9,7 @@ internal static class TimeProviderExtensions
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         var today = DateOnly.FromDateTime(timeProvider.GetLocalNow().Date);
-        return (today, today);
+        return today.GetSurroundingDayDateRange();
     }
 
     public static (DateOnly StartOfWeek, DateOnly EndOfWeek) GetCurrentWeekDateRange(
@@ -18,14 +18,7 @@ internal static class TimeProviderExtensions
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         var today = DateOnly.FromDateTime(timeProvider.GetLocalNow().Date);
-
-        var dayOfWeek = (int)today.DayOfWeek;
-        if (dayOfWeek < 0)
-        {
-            dayOfWeek = 7;
-        }
-
-        return (today.AddDays(1 - dayOfWeek), today.AddDays(7 - dayOfWeek));
+        return today.GetSurroundingWeekDateRange();
     }
 
     public static (DateOnly StartOfWeek, DateOnly EndOfWeek) GetCurrentMonthDateRange(
@@ -34,11 +27,6 @@ internal static class TimeProviderExtensions
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         var today = DateOnly.FromDateTime(timeProvider.GetLocalNow().Date);
-
-        var year = today.Year;
-        var month = today.Month;
-        var lastDay = DateTime.DaysInMonth(year, month);
-
-        return (new DateOnly(year, month, 1), new DateOnly(year, month, lastDay));
+        return today.GetSurroundingMonthDateRange();
     }
 }
