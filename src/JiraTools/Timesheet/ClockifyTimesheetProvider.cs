@@ -1,12 +1,17 @@
 using Clockify;
 
+using JiraTools.Extensions;
+
+using Microsoft.Extensions.Options;
+
 namespace JiraTools.Timesheet;
 
 internal sealed class ClockifyTimesheetProvider
 (
     IClockifyTimeEntryApi timeEntryApi,
     IClockifyProjectApi projectApi,
-    IClockifyTaskApi taskApi
+    IClockifyTaskApi taskApi,
+    IOptions<ClockifyTimesheetProviderOptions> options
 )
 {
     public async Task<IEnumerable<ClockifyTimesheetEntry>> GetForUserAsync(
@@ -29,12 +34,13 @@ internal sealed class ClockifyTimesheetProvider
            .Distinct()
            .ToList();
 
-        Task<ClockifyProject[]> getProjectsTask = Task.WhenAll(projectIds
+        var getProjectsTask = projectIds
             .Select(projectId => projectApi.GetProjectByIdAsync(
                 workspaceId: workspaceId,
                 projectId: projectId,
-                cancellationToken: cancellationToken)));
-        Task<ClockifyTask[]> getTasksTask = Task.WhenAll(timeEntries
+                cancellationToken: cancellationToken))
+            .WhenAll(options.Value.MaxRequestParallelism);
+        var getTasksTask = timeEntries
            .Select(_ => (_.ProjectId, _.TaskId))
            .OfType<(string ProjectId, string TaskId)>()
            .Distinct()
@@ -42,10 +48,11 @@ internal sealed class ClockifyTimesheetProvider
                 workspaceId: workspaceId,
                 projectId: _.ProjectId,
                 taskId: _.TaskId,
-                cancellationToken: cancellationToken)));
+                cancellationToken: cancellationToken))
+            .WhenAll(options.Value.MaxRequestParallelism);
 
         await Task.WhenAll(getProjectsTask, getTasksTask);
-
+    
         var tasks = getTasksTask.Result
             .ToDictionary(task => (task.ProjectId, task.Id));
         var projects = getProjectsTask.Result

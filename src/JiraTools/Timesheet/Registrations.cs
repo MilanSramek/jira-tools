@@ -21,6 +21,11 @@ internal static class Registrations
     private static IServiceCollection AddServices(this IServiceCollection services)
     {
         services.AddTransient<ClockifyTimesheetProvider>();
+        services.AddOptions<ClockifyTimesheetProviderOptions>()
+            .BindConfiguration("Clockify")
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services.AddTransient<JiraTimesheetProvider>();
 
         return services;
