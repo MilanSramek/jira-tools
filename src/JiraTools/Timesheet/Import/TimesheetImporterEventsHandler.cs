@@ -10,11 +10,17 @@ internal sealed class TimesheetImporterEventsHandler :
     INotificationHandler<MisalignedIssuesEvent>,
     INotificationHandler<TimesheetImportFinishedEvent>
 {
+    private readonly TaskCompletionSource _importFinishedCompletionSource = new();
+
     public Task Handle(StartingTimesheetImportEvent notification, CancellationToken _)
     {
         var settings = notification.Settings;
-        AnsiConsole.MarkupLine(
-            $"[dim]→[/]  Starting timesheet import in range [dim][[{settings.From:d}, {settings.To:d}]][/]");
+        AnsiConsole.MarkupLine($"[dim]→[/]  Starting timesheet import in range [dim][[{settings.From:d}, {settings.To:d}]][/]");
+
+        AnsiConsole.Status()
+            .Spinner(Spinner.Known.Default)
+            .SpinnerStyle(Style.Parse("green"))
+            .StartAsync("Importing...", _ => _importFinishedCompletionSource.Task);
 
         return Task.CompletedTask;
     }
@@ -37,6 +43,8 @@ internal sealed class TimesheetImporterEventsHandler :
 
     public Task Handle(MisalignedIssuesEvent notification, CancellationToken _)
     {
+        _importFinishedCompletionSource.SetResult();
+
         AnsiConsole.MarkupLine("[red]✗[/]  Import cannot proceed — misaligned issues detected");
         var misalignedJiraIssuesTable = BuildWorklogTable(
             notification.MisalignedJiraIssues.Select(entry => (
@@ -73,7 +81,7 @@ internal sealed class TimesheetImporterEventsHandler :
             {
                 table.AddRow(
                     Markup.Escape(key),
-                    started.HasValue ? started.Value.ToString("d") : string.Empty,
+                    started.HasValue ? started.Value.ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
                     Markup.Escape(timeSpent.ToString()),
                     Markup.Escape(comment ?? string.Empty));
             }
@@ -84,6 +92,8 @@ internal sealed class TimesheetImporterEventsHandler :
 
     public Task Handle(TimesheetImportFinishedEvent notification, CancellationToken _)
     {
+        _importFinishedCompletionSource.SetResult();
+
         var count = notification.ImportedWorklogs.Count();
         AnsiConsole.MarkupLine($"[green]✓[/]  Timesheet import finished — [bold]{count}[/] worklogs imported");
 
