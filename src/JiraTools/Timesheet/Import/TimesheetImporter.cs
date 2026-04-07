@@ -57,10 +57,10 @@ internal sealed class TimesheetImporter
                 _.Key.ToString(),
                 _.Request,
                 cancellationToken: cancellationToken));
-        // var createdWorklogs = await Task.WhenAll(createJiraWorklogTasks);
+        var createdWorklogs = await Task.WhenAll(createJiraWorklogTasks);
 
-        // await eventPublisher.Publish(new TimesheetImportFinishedEvent(createdWorklogs),
-        //     cancellationToken);
+        await eventPublisher.Publish(new TimesheetImportFinishedEvent(createdWorklogs),
+            cancellationToken);
     }
 
     private static ReconciliationResult ReconcileTimesheetEntries(
