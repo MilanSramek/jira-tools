@@ -1,29 +1,21 @@
 using Clockify;
 
 using Jira;
+using MediatR;
 
 namespace JiraTools.Timesheet.Import;
 
-internal sealed class ClockifyTimesheetImporter
+internal sealed class TimesheetImporter
 (
     IClockifyUserApi clockifyUserApi,
     ClockifyTimesheetProvider clockifyTimesheetProvider,
     IJiraUserApi jiraUserApi,
     JiraTimesheetProvider jiraTimesheetProvider,
-    IJiraIssueApi jiraIssueApi
+    IJiraIssueApi jiraIssueApi,
+    IPublisher eventPublisher
 ) :
     ITimesheetImporter
-{
-    private readonly struct JiraIssueKey(string key)
-    {
-        private readonly string _key = key ?? throw new ArgumentNullException(nameof(key));
-
-        public static JiraIssueKey FromClockifyTask(ClockifyProject project, ClockifyTaskName taskName)
-            => new($"{project.Name}-{taskName.Key}");
-
-        public override string ToString() => _key;
-    }
-
+{    
     private readonly record struct ReconciliationResult
     (
         IEnumerable<(JiraIssueKey Key, CreateJiraWorklogRequest Request)> ToCreate,
@@ -33,6 +25,8 @@ internal sealed class ClockifyTimesheetImporter
     public async Task ExecuteAsync(TimesheetImportSettings settings,
         CancellationToken cancellationToken)
     {
+        await eventPublisher.Publish(new StartingTimesheetImportEvent(settings), cancellationToken);
+
         var getClockifyTimesheetTask = GetClockifyCurrentUserTimesheetAsync(
             settings.From,
             settings.To,
@@ -43,32 +37,19 @@ internal sealed class ClockifyTimesheetImporter
             cancellationToken);
         await Task.WhenAll(getClockifyTimesheetTask, getJiraTimesheetTask);
 
-        var clockifyTimesheet = getClockifyTimesheetTask.Result;
-        var jiraTimesheet = getJiraTimesheetTask.Result;
+        var clockifyTimesheet = getClockifyTimesheetTask.Result.ToArray();
+        await eventPublisher.Publish(new ClockifyTimesheetAcquiredEvent(clockifyTimesheet), 
+            cancellationToken);
+
+        var jiraTimesheet = getJiraTimesheetTask.Result.ToArray();
+        await eventPublisher.Publish(new JiraTimesheetAcquiredEvent(jiraTimesheet), cancellationToken);
 
         var (toCreate, toDelete) = ReconcileTimesheetEntries(clockifyTimesheet, jiraTimesheet);
         if (toDelete.Any())
         {
-            Console.Error.WriteLine("Error: Import cannot proceed because some existing issues do not align.");
-            foreach (var worklog in toDelete)
-            {
-                Console.Error.WriteLine(
-                    $"- Issue: {worklog.Issue.Key}, "
-                    + $"Started: {worklog.Worklog.Started:d}, "
-                    + $"Time Spent: {worklog.Worklog.TimeSpent}, "
-                    + $"Comment: {worklog.Worklog.Comment?.GetText() ?? "<no comment>"}");
-            }
-            Console.Out.WriteLine("Warning: The following worklogs will not be created:");
-            foreach (var (Key, Request) in toCreate)
-            {
-                Console.Out.WriteLine(
-                    $"- Issue: {Key}, "
-                    + $"Started: {Request.Started:d}, "
-                    + $"Time Spent: {Request.TimeSpent}, "
-                    + $"Comment: {Request.Comment?.GetText() ?? "<no comment>"}");   
-            }
+            await eventPublisher.Publish(new MisalignedIssuesEvent(toDelete, toCreate), 
+                cancellationToken);
             return;
-            // throw new Exception("Import failed. Some existing issues do not align.");
         }
 
         var createJiraWorklogTasks = toCreate
@@ -76,7 +57,10 @@ internal sealed class ClockifyTimesheetImporter
                 _.Key.ToString(),
                 _.Request,
                 cancellationToken: cancellationToken));
-        await Task.WhenAll(createJiraWorklogTasks);
+        // var createdWorklogs = await Task.WhenAll(createJiraWorklogTasks);
+
+        // await eventPublisher.Publish(new TimesheetImportFinishedEvent(createdWorklogs),
+        //     cancellationToken);
     }
 
     private static ReconciliationResult ReconcileTimesheetEntries(

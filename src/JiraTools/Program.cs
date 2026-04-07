@@ -10,7 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-// args = ["timesheet", "import", "--source", "Clockify", "--period", "Month"];
+// args = ["timesheet", "import", "--source", "Clockify", "--period", "Week", "--anchor", "2026-03-24"];
 IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
@@ -22,6 +22,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddClockify();
         services.AddJira();
         services.AddCommands();
+        services.AddMediator();
 
         services.AddOptions<ClockifyOptions>()
             .Bind(context.Configuration.GetSection(ClockifyOptions.SectionName));

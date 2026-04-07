@@ -70,7 +70,7 @@ internal sealed class ImportTimesheetCommand : Command
 
         var timesheetImporter = timesheetSource switch
         {
-            TimesheetImportSource.Clockify => serviceProvider.GetRequiredService<ClockifyTimesheetImporter>(),
+            TimesheetImportSource.Clockify => serviceProvider.GetRequiredService<TimesheetImporter>(),
             _ => throw new NotSupportedException($"Timesheet source '{timesheetSource}' is not supported.")
         };
 
