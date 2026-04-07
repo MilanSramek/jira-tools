@@ -6,7 +6,7 @@ A command-line tool that imports your time entries from **Clockify** into **Jira
 
 ## Configuration
 
-Before using JiraTools, configure your Jira and Clockify connections once. Credentials are stored locally in `%APPDATA%\JiraTools\secrets.json`.
+Before using JiraTools, configure your Jira and Clockify connections once. Credentials are stored locally in `%APPDATA%\JiraTools\secrets.json` (Windows) or `~/.config/JiraTools/secrets.json` (Linux).
 
 ### Jira
 
