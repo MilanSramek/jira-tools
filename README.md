@@ -11,7 +11,7 @@ Before using JiraTools, configure your Jira and Clockify connections once. Crede
 ### Jira
 
 1. **Get your Jira API token**
-   Go to [https://id.atlassian.net/manage-profile/security/api-tokens](https://id.atlassian.net/manage-profile/security/api-tokens) → **Create API token**.
+   Go to [API token](https://id.atlassian.com/manage-profile/security/api-tokens) → **Create API token**.
 
 2. **Configure the connection**
    ```
@@ -22,7 +22,7 @@ Before using JiraTools, configure your Jira and Clockify connections once. Crede
 ### Clockify
 
 1. **Get your Clockify API key**
-   Go to [https://app.clockify.me/user/settings](https://app.clockify.me/user/settings) → **API** section → copy the key.
+   Go to [API keys](https://app.clockify.me/manage-api-keys) → **CREATE NEW**
 
 2. **Configure the connection**
    ```
