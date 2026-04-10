@@ -31,6 +31,37 @@ Before using JiraTools, configure your Jira and Clockify connections once. Crede
 
 ---
 
+## Mapping Clockify time entry onto Jira worklog
+
+For the import to work, your Clockify workspace must follow these naming conventions:
+
+**Clockify project name** must match your **Jira project key** exactly (e.g. `ADI`).
+
+**Clockify task name** must start with the Jira issue number, optionally followed by a colon and a short description hint:
+
+```
+<issueNumber>
+<issueNumber>: <hint>
+```
+
+Example: `242: Standup`
+
+The following fields are mapped when creating a Jira worklog:
+
+| Jira worklog field | Source in Clockify | Example |
+|---|---|---|
+| **Issue** | `{project name}-{issue number}` | `ADI-242` |
+| **Started** | Time entry start time | Copied as-is |
+| **Time spent** | Time entry end − start | Computed duration |
+| **Comment** | Time entry description; falls back to task hint if blank; omitted if neither is set | `Standup` |
+
+Overall examples:
+
+- Clockify timesheet row `ADI: 242: Standup` → `ADI-242` Jira worklog with a comment `Standup`.
+- Clockify timesheet row `ADI: 242: AVA News` with a comment `Management Bullshit` → `ADI-242` Jira worklog with a comment `Management Bullshit`.
+
+---
+
 ## Commands
 
 ### `timesheet import`

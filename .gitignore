@@ -363,3 +363,6 @@ FodyWeavers.xsd
 
 # Run settings
 *.runsettings
+
+# C# Dev Kit
+*.lscache
