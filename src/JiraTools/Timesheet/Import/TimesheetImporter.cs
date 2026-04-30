@@ -1,7 +1,12 @@
 using Clockify;
 
+using FluentResults;
+
 using Jira;
+
 using MediatR;
+
+using Refit;
 
 namespace JiraTools.Timesheet.Import;
 
@@ -15,7 +20,7 @@ internal sealed class TimesheetImporter
     IPublisher eventPublisher
 ) :
     ITimesheetImporter
-{    
+{
     private readonly record struct ReconciliationResult
     (
         IEnumerable<(JiraIssueKey Key, CreateJiraWorklogRequest Request)> ToCreate,
@@ -25,42 +30,64 @@ internal sealed class TimesheetImporter
     public async Task ExecuteAsync(TimesheetImportSettings settings,
         CancellationToken cancellationToken)
     {
-        await eventPublisher.Publish(new StartingTimesheetImportEvent(settings), cancellationToken);
-
-        var getClockifyTimesheetTask = GetClockifyCurrentUserTimesheetAsync(
-            settings.From,
-            settings.To,
-            cancellationToken);
-        var getJiraTimesheetTask = GetJiraCurrentUserTimesheetAsync(
-            settings.From,
-            settings.To,
-            cancellationToken);
-        await Task.WhenAll(getClockifyTimesheetTask, getJiraTimesheetTask);
-
-        var clockifyTimesheet = getClockifyTimesheetTask.Result.ToArray();
-        await eventPublisher.Publish(new ClockifyTimesheetAcquiredEvent(clockifyTimesheet), 
-            cancellationToken);
-
-        var jiraTimesheet = getJiraTimesheetTask.Result.ToArray();
-        await eventPublisher.Publish(new JiraTimesheetAcquiredEvent(jiraTimesheet), cancellationToken);
-
-        var (toCreate, toDelete) = ReconcileTimesheetEntries(clockifyTimesheet, jiraTimesheet);
-        if (toDelete.Any())
+        try
         {
-            await eventPublisher.Publish(new MisalignedIssuesEvent(toDelete, toCreate), 
+            await eventPublisher.Publish(new StartingTimesheetImportEvent(settings), cancellationToken);
+            var getClockifyTimesheetTask = GetClockifyCurrentUserTimesheetAsync(
+                settings.From,
+                settings.To,
                 cancellationToken);
-            return;
-        }
+            var getJiraTimesheetTask = GetJiraCurrentUserTimesheetAsync(
+                settings.From,
+                settings.To,
+                cancellationToken);
+            await Task.WhenAll(getClockifyTimesheetTask, getJiraTimesheetTask);
+            if (getClockifyTimesheetTask.Result.IsFailed)
+            {
+                await eventPublisher.Publish(
+                    new ClockifyTimesheetAcquiringFailedEvent(getClockifyTimesheetTask.Result.Errors),
+                    cancellationToken);
+            }
+            if (getJiraTimesheetTask.Result.IsFailed)
+            {
+                await eventPublisher.Publish(
+                    new JiraTimesheetAcquiringFailedEvent(getJiraTimesheetTask.Result.Errors),
+                    cancellationToken);
+            }
+            if (getClockifyTimesheetTask.Result.IsFailed || getJiraTimesheetTask.Result.IsFailed)
+            {
+                return;
+            }
 
-        var createJiraWorklogTasks = toCreate
-            .Select(_ => jiraIssueApi.CreateWorklogAsync(
-                _.Key.ToString(),
-                _.Request,
-                cancellationToken: cancellationToken));
-        var createdWorklogs = await Task.WhenAll(createJiraWorklogTasks);
+            var clockifyTimesheet = getClockifyTimesheetTask.Result.Value.ToArray();
+            await eventPublisher.Publish(new ClockifyTimesheetAcquiredEvent(clockifyTimesheet),
+                cancellationToken);
 
-        await eventPublisher.Publish(new TimesheetImportFinishedEvent(createdWorklogs),
+            var jiraTimesheet = getJiraTimesheetTask.Result.Value.ToArray();
+            await eventPublisher.Publish(new JiraTimesheetAcquiredEvent(jiraTimesheet), cancellationToken);
+
+            var (toCreate, toDelete) = ReconcileTimesheetEntries(clockifyTimesheet, jiraTimesheet);
+            if (toDelete.Any())
+            {
+                await eventPublisher.Publish(new MisalignedIssuesEvent(toDelete, toCreate),
+                    cancellationToken);
+                return;
+            }
+
+            var createJiraWorklogTasks = toCreate
+                .Select(_ => jiraIssueApi.CreateWorklogAsync(
+                    _.Key.ToString(),
+                    _.Request,
+                    cancellationToken: cancellationToken));
+            var createdWorklogs = await Task.WhenAll(createJiraWorklogTasks);
+
+            await eventPublisher.Publish(new TimesheetImportFinishedEvent(createdWorklogs),
             cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await eventPublisher.Publish(new TimesheetImportFailedEvent(ex), cancellationToken);
+        }
     }
 
     private static ReconciliationResult ReconcileTimesheetEntries(
@@ -68,7 +95,7 @@ internal sealed class TimesheetImporter
         IEnumerable<JiraTimesheetEntry> jiraTimesheet)
     {
         Dictionary<(JiraIssueKey, string?, DateOnly, TimeSpan TimeSpent), JiraTimesheetEntry> jiraEntries = jiraTimesheet
-            .ToDictionary(entry => 
+            .ToDictionary(entry =>
             (
                 new JiraIssueKey(entry.Issue.Key),
                 entry.Worklog.Comment?.GetText(),
@@ -118,30 +145,52 @@ internal sealed class TimesheetImporter
         };
     }
 
-    private async Task<IEnumerable<ClockifyTimesheetEntry>> GetClockifyCurrentUserTimesheetAsync(
+    private async Task<Result<IEnumerable<ClockifyTimesheetEntry>>> GetClockifyCurrentUserTimesheetAsync(
         DateOnly from,
         DateOnly to,
         CancellationToken cancellationToken)
     {
-        var currentUser = await clockifyUserApi.GetCurrentUserAsync(cancellationToken);
-        return await clockifyTimesheetProvider.GetForUserAsync(
-            currentUser.Id,
-            currentUser.ActiveWorkspace ?? currentUser.DefaultWorkspace!,
-            from,
-            to,
-            cancellationToken);
+        try
+        {
+            var currentUser = await clockifyUserApi.GetCurrentUserAsync(cancellationToken);
+            return Result.Ok(await clockifyTimesheetProvider.GetForUserAsync(
+                currentUser.Id,
+                currentUser.ActiveWorkspace ?? currentUser.DefaultWorkspace!,
+                from,
+                to,
+                cancellationToken));
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            return Result.Fail("Unauthorized access to Clockify API");
+        }
+        catch (Exception ex)
+        {
+            return Result.Fail(new ExceptionalError(ex));
+        }
     }
 
-    private async Task<IEnumerable<JiraTimesheetEntry>> GetJiraCurrentUserTimesheetAsync(
+    private async Task<Result<IEnumerable<JiraTimesheetEntry>>> GetJiraCurrentUserTimesheetAsync(
         DateOnly from,
         DateOnly to,
         CancellationToken cancellationToken)
     {
-        var currentUser = await jiraUserApi.GetCurrentUserAsync(cancellationToken: cancellationToken);
-        return await jiraTimesheetProvider.GetForUserAsync(
-            currentUser.AccountId!,
-            from,
-            to,
-            cancellationToken);
+        try
+        {
+            var currentUser = await jiraUserApi.GetCurrentUserAsync(cancellationToken: cancellationToken);
+            return Result.Ok(await jiraTimesheetProvider.GetForUserAsync(
+                currentUser.AccountId!,
+                from,
+                to,
+                cancellationToken));
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            return Result.Fail("Unauthorized access to Jira API");
+        }
+        catch (Exception ex)
+        {
+            return Result.Fail(new ExceptionalError(ex));
+        }
     }
 }

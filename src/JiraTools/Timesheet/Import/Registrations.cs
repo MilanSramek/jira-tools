@@ -17,12 +17,22 @@ internal static class Registrations
     private static void AddEventHandlers(this IServiceCollection services)
     {
         services.AddSingleton<TimesheetImporterEventsHandler>();
-        
+
         services.AddTransient<INotificationHandler<StartingTimesheetImportEvent>>(
             _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
         services.AddTransient<INotificationHandler<TimesheetImportFinishedEvent>>(
             _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
         services.AddTransient<INotificationHandler<MisalignedIssuesEvent>>(
+            _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
+        services.AddTransient<INotificationHandler<TimesheetImportFailedEvent>>(
+            _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
+        services.AddTransient<INotificationHandler<JiraTimesheetAcquiredEvent>>(
+            _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
+        services.AddTransient<INotificationHandler<ClockifyTimesheetAcquiredEvent>>(
+            _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
+        services.AddTransient<INotificationHandler<JiraTimesheetAcquiringFailedEvent>>(
+            _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
+        services.AddTransient<INotificationHandler<ClockifyTimesheetAcquiringFailedEvent>>(
             _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
     }
 }

@@ -8,7 +8,10 @@ internal sealed class TimesheetImporterEventsHandler :
     INotificationHandler<ClockifyTimesheetAcquiredEvent>,
     INotificationHandler<JiraTimesheetAcquiredEvent>,
     INotificationHandler<MisalignedIssuesEvent>,
-    INotificationHandler<TimesheetImportFinishedEvent>
+    INotificationHandler<TimesheetImportFinishedEvent>,
+    INotificationHandler<TimesheetImportFailedEvent>,
+    INotificationHandler<JiraTimesheetAcquiringFailedEvent>,
+    INotificationHandler<ClockifyTimesheetAcquiringFailedEvent>
 {
     private readonly TaskCompletionSource _importFinishedCompletionSource = new();
 
@@ -64,11 +67,11 @@ internal sealed class TimesheetImporterEventsHandler :
                 entry.Request.TimeSpent,
                 Comment: entry.Request.Comment?.GetText())))
             .BorderColor(Color.Yellow);
-            
+
         AnsiConsole.Write(notCreatedWorklogsTable);
 
         return Task.CompletedTask;
-        
+
         static Table BuildWorklogTable(IEnumerable<(string Key, DateTime? Started, TimeSpan TimeSpent, string? Comment)> rows)
         {
             var table = new Table()
@@ -98,5 +101,58 @@ internal sealed class TimesheetImporterEventsHandler :
         AnsiConsole.MarkupLine($"[green]✓[/]  Timesheet import finished — [bold]{count}[/] worklogs imported");
 
         return Task.CompletedTask;
+    }
+
+    public Task Handle(TimesheetImportFailedEvent notification, CancellationToken cancellationToken)
+    {
+        _importFinishedCompletionSource.SetResult();
+
+        AnsiConsole.MarkupLine("[red]✗[/]  Timesheet import failed");
+        AnsiConsole.MarkupLine($"[red]✗[/]  Reason: {notification.Error.Message}");
+
+        return Task.CompletedTask;
+    }
+
+    public Task Handle(JiraTimesheetAcquiringFailedEvent notification, CancellationToken cancellationToken)
+    {
+        _importFinishedCompletionSource.SetResult();
+
+        WriteAcquiringFailure("Jira", notification.Errors.Select(error => error.Message));
+
+        return Task.CompletedTask;
+    }
+
+    public Task Handle(ClockifyTimesheetAcquiringFailedEvent notification, CancellationToken cancellationToken)
+    {
+        _importFinishedCompletionSource.SetResult();
+
+        WriteAcquiringFailure("Clockify", notification.Errors.Select(error => error.Message));
+
+        return Task.CompletedTask;
+    }
+
+    private static void WriteAcquiringFailure(string source, IEnumerable<string> errorMessages)
+    {
+        var rows = errorMessages
+            .Select(message => Markup.Escape(message))
+            .ToArray();
+
+        var reasonLines = rows.Length == 0
+            ? new Markup("[grey]- no reason provided[/]")
+            : new Markup(string.Join(Environment.NewLine, rows.Select(row => $"[red]-[/] {row}")));
+
+        var body = new Rows(
+            new Markup($"[red]✗[/]  [bold]{Markup.Escape(source)}[/] timesheet acquiring failed"),
+            new Rule("[grey]Captured errors[/]").RuleStyle("red"),
+            reasonLines);
+
+        var panel = new Panel(body)
+            .Header("[bold red]Import Failure[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderStyle(Style.Parse("red"))
+            .Padding(1, 0, 1, 0)
+            .Expand();
+
+        AnsiConsole.Write(panel);
     }
 }

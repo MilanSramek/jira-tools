@@ -1,6 +1,6 @@
 <Project>
   <ItemGroup>
-    <PackageVersion Include="CSharpFunctionalExtensions" Version="3.6.0" />
+    <PackageVersion Include="FluentResults" Version="4.0.0" />
     <PackageVersion Include="MediatR" Version="12.5.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.10" />

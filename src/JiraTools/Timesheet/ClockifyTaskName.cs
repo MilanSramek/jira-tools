@@ -1,4 +1,4 @@
-using CSharpFunctionalExtensions;
+using FluentResults;
 
 using JiraTools.Timesheet.Import;
 
@@ -22,24 +22,24 @@ internal readonly struct ClockifyTaskName
     {
         if (value is null)
         {
-            return Result.Failure<ClockifyTaskName>(Res.ClockifyTaskName_CannotBeNull);
+            return Result.Fail<ClockifyTaskName>(Res.ClockifyTaskName_CannotBeNull);
         }
 
         var separatorIndex = value.IndexOf(Separator);
         var valueSpan = value.AsSpan();
         if (separatorIndex < 0)
         {
-            return Result.Success(new ClockifyTaskName(value.Trim(), null));
+            return Result.Ok(new ClockifyTaskName(value.Trim(), null));
         }
         if (separatorIndex == 0)
         {
-            return Result.Failure<ClockifyTaskName>(Res.ClockifyTaskName_KeyCannotBeEmpty);
+            return Result.Fail<ClockifyTaskName>(Res.ClockifyTaskName_KeyCannotBeEmpty);
         }
 
         var key = valueSpan[..separatorIndex].Trim().ToString();
         string? hint = separatorIndex < value.Length - 1
             ? valueSpan[(separatorIndex + 1)..].Trim().ToString()
             : null;
-        return Result.Success(new ClockifyTaskName(key, hint));
+        return Result.Ok(new ClockifyTaskName(key, hint));
     }
 }
