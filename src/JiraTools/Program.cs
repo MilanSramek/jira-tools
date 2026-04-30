@@ -10,7 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-// args = ["timesheet", "import", "--source", "Clockify", "--period", "Month", "--anchor", "2026-04-30"];
+args = ["timesheet", "import", "--source", "Clockify", "--period", "Month", "--anchor", "2026-04-30"];
 IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
