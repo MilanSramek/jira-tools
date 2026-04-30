@@ -1,39 +1,108 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace JiraTools.Extensions;
 
 internal static class ParallelExtensions
 {
-    public static async Task WhenAll(
-        this IEnumerable<Task> tasks,
-        int? maxDegreeOfParallelism = null)
+    extension<T>(IEnumerable<Func<Task<T>>> tasks)
     {
-        if (maxDegreeOfParallelism is null)
+        public async Task<T[]> WhenAll(int? maxDegreeOfParallelism = null)
         {
-            await Task.WhenAll(tasks);
-            return;
-        }
+            if (maxDegreeOfParallelism is null)
+            {
+                return await Task.WhenAll(tasks.Select(taskFactory => taskFactory()));
+            }
+            if (maxDegreeOfParallelism <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxDegreeOfParallelism), "Max degree of parallelism must be greater than 0.");
+            }
 
-        foreach (var chunk in tasks.Chunk(maxDegreeOfParallelism.Value))
-        {
-            await Task.WhenAll(chunk);
-        }
-    }
+            var tasksQueue = new Queue<Func<Task<T>>>(tasks);
+            var runningTasks = new HashSet<Task<T>>(maxDegreeOfParallelism.Value);
+            var results = new T[tasksQueue.Count];
+            Dictionary<Task<T>, int> tasksOrder = [];
+            int taskIndex = 0;
+            List<Exception>? exceptions = null;
 
-    public static async Task<T[]> WhenAll<T>(
-        this IEnumerable<Task<T>> tasks,
-        int? maxDegreeOfParallelism = null)
-    {
-        if (maxDegreeOfParallelism is null)
-        {
-            return await Task.WhenAll(tasks);
-        }
+            while (tasksQueue.Count > 0 && runningTasks.Count < maxDegreeOfParallelism.Value)
+            {
+                if (TryCreateTask(tasksQueue.Dequeue(), out Task<T>? task, out Exception? exception))
+                {
+                    runningTasks.Add(task);
+                    tasksOrder.Add(task, taskIndex++);
+                }
+                else
+                {
+                    exceptions ??= [];
+                    exceptions.Add(exception);
+                }
+            }
 
-        var results = new List<T>();
-        foreach (var chunk in tasks.Chunk(maxDegreeOfParallelism.Value))
-        {
-            var chunkResults = await Task.WhenAll(chunk);
-            results.AddRange(chunkResults);
-        }
+            while (runningTasks.Count > 0)
+            {
+                var completedTask = await Task.WhenAny(runningTasks);
+                runningTasks.Remove(completedTask);
 
-        return [.. results];
+                switch (completedTask.Status)
+                {
+                    case TaskStatus.RanToCompletion:
+                        var completedTaskIndex = tasksOrder[completedTask];
+                        results[completedTaskIndex] = completedTask.Result; 
+                        break;
+                    case TaskStatus.Faulted:
+                        exceptions ??= [];
+                        if (completedTask.Exception is AggregateException aggregateException)
+                        {
+                            exceptions.AddRange(aggregateException.InnerExceptions);
+                        }
+                        else if (completedTask.Exception is { })
+                        {
+                            exceptions.Add(completedTask.Exception);
+                        }
+                        break;
+                    case TaskStatus.Canceled:
+                        exceptions ??= [];
+                        exceptions.Add(new TaskCanceledException(completedTask));
+                        break;
+                }
+                
+                if (tasksQueue.TryDequeue(out Func<Task<T>>? nextTaskFactory))
+                {
+                    if (TryCreateTask(nextTaskFactory, out Task<T>? nextTask, out Exception? exception))
+                    {
+                        runningTasks.Add(nextTask);
+                        tasksOrder.Add(nextTask, taskIndex++);
+                    }
+                    else
+                    {
+                        exceptions ??= [];
+                        exceptions.Add(exception);
+                    }
+                }
+            }
+
+            return exceptions is null 
+                ? results
+                : throw new AggregateException(exceptions);
+
+            static bool TryCreateTask(
+                Func<Task<T>> taskFactory,
+                [NotNullWhen(true)] out Task<T>? task,
+                [NotNullWhen(false)] out Exception? exception)
+            {
+                try
+                {
+                    task = taskFactory();
+                    exception = null;
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    exception = ex;
+                    task = null;
+                    return false;
+                }
+            }
+        }
     }
 }

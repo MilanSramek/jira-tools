@@ -1,10 +1,13 @@
 using Jira;
+using JiraTools.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace JiraTools.Timesheet;
 
 internal sealed class JiraTimesheetProvider
 (
-    IJiraIssueApi jiraIssueApi
+    IJiraIssueApi jiraIssueApi,
+    IOptions<JiraTimesheetProviderOptions> options
 )
 {
     public async Task<IEnumerable<JiraTimesheetEntry>> GetForUserAsync(
@@ -20,18 +23,16 @@ internal sealed class JiraTimesheetProvider
             maxResults: 1000,
             cancellationToken: cancellationToken);
 
-        var getWorklogTasks = response.Issues
-            .Select(issue => jiraIssueApi.GetIssueWorklogsAsync(
+        var worklogsResponses = await response.Issues
+            .Select(issue => (Func<Task<JiraWorklogsResponse>>)(() => jiraIssueApi.GetIssueWorklogsAsync(
                 issue.Key,
                 startedAfter: from.ToDateTime(TimeOnly.MinValue),
-                startedBefore: to.ToDateTime(TimeOnly.MaxValue)));
+                startedBefore: to.ToDateTime(TimeOnly.MaxValue))))
+            .WhenAll(options.Value.MaxRequestParallelism);
 
         var issues = response.Issues.ToDictionary(issue => issue.Id);
-
-        await Task.WhenAll(getWorklogTasks);
-
-        return getWorklogTasks
-            .SelectMany(task => task.Result.Worklogs)
+        return worklogsResponses
+            .SelectMany(_ => _.Worklogs)
             .Where(worklog => worklog.Author?.AccountId == accountId
                 && issues.ContainsKey(worklog.IssueId!))
             .Select(worklog => new JiraTimesheetEntry(

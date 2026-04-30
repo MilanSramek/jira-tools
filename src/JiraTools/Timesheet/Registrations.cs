@@ -27,6 +27,10 @@ internal static class Registrations
             .ValidateOnStart();
 
         services.AddTransient<JiraTimesheetProvider>();
+        services.AddOptions<JiraTimesheetProviderOptions>()
+            .BindConfiguration("Jira")
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         return services;
     }

@@ -35,20 +35,20 @@ internal sealed class ClockifyTimesheetProvider
            .ToList();
 
         var getProjectsTask = projectIds
-            .Select(projectId => projectApi.GetProjectByIdAsync(
+            .Select(projectId => (Func<Task<ClockifyProject>>)(() => projectApi.GetProjectByIdAsync(
                 workspaceId: workspaceId,
                 projectId: projectId,
-                cancellationToken: cancellationToken))
+                cancellationToken: cancellationToken)))
             .WhenAll(options.Value.MaxRequestParallelism);
         var getTasksTask = timeEntries
            .Select(_ => (_.ProjectId, _.TaskId))
            .OfType<(string ProjectId, string TaskId)>()
            .Distinct()
-           .Select(_ => taskApi.GetTaskByIdAsync(
+           .Select(_ => (Func<Task<ClockifyTask>>)(() => taskApi.GetTaskByIdAsync(
                 workspaceId: workspaceId,
                 projectId: _.ProjectId,
                 taskId: _.TaskId,
-                cancellationToken: cancellationToken))
+                cancellationToken: cancellationToken)))
             .WhenAll(options.Value.MaxRequestParallelism);
 
         await Task.WhenAll(getProjectsTask, getTasksTask);
