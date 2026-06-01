@@ -4,6 +4,7 @@ using FluentResults;
 
 using Jira;
 using JiraTools.Extensions;
+using JiraTools.Timesheet.Import.Events;
 using MediatR;
 using Microsoft.Extensions.Options;
 using Refit;
