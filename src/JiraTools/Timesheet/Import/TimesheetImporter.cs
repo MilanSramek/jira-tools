@@ -3,9 +3,9 @@ using Clockify;
 using FluentResults;
 
 using Jira;
-
+using JiraTools.Extensions;
 using MediatR;
-
+using Microsoft.Extensions.Options;
 using Refit;
 
 namespace JiraTools.Timesheet.Import;
@@ -17,7 +17,8 @@ internal sealed class TimesheetImporter
     IJiraUserApi jiraUserApi,
     JiraTimesheetProvider jiraTimesheetProvider,
     IJiraIssueApi jiraIssueApi,
-    IPublisher eventPublisher
+    IPublisher eventPublisher,
+    IOptions<TimesheetImporterOptions> options
 ) :
     ITimesheetImporter
 {
@@ -74,14 +75,14 @@ internal sealed class TimesheetImporter
                 return;
             }
 
-            var createJiraWorklogTasks = toCreate
-                .Select(_ => jiraIssueApi.CreateWorklogAsync(
-                    _.Key.ToString(),
-                    _.Request,
-                    cancellationToken: cancellationToken));
-            var createdWorklogs = await Task.WhenAll(createJiraWorklogTasks);
-
-            await eventPublisher.Publish(new TimesheetImportFinishedEvent(createdWorklogs),
+            var createJiraWorklogResult = await CreateJiraWorklogAsync(toCreate, cancellationToken);
+            if (createJiraWorklogResult.IsFailed)
+            {
+                await eventPublisher.Publish(new JiraTimesheetPublishingFailedEvent(createJiraWorklogResult.Errors),
+                    cancellationToken);
+                return;
+            }
+            await eventPublisher.Publish(new TimesheetImportFinishedEvent(createJiraWorklogResult.Value),
             cancellationToken);
         }
         catch (Exception ex)
@@ -187,6 +188,29 @@ internal sealed class TimesheetImporter
         catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
             return Result.Fail("Unauthorized access to Jira API");
+        }
+        catch (Exception ex)
+        {
+            return Result.Fail(new ExceptionalError(ex));
+        }
+    }
+
+    private async Task<Result<JiraWorklog[]>> CreateJiraWorklogAsync(
+        IEnumerable<(JiraIssueKey Key, CreateJiraWorklogRequest Request)> toCreate,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var createJiraWorklogTasks = toCreate
+                .Select(_ => 
+                {
+                    return (Func<Task<JiraWorklog>>)(() => jiraIssueApi.CreateWorklogAsync(
+                        _.Key.ToString(),
+                        _.Request,
+                        cancellationToken: cancellationToken));
+                });
+            var createdWorklogs = await createJiraWorklogTasks.WhenAll(options.Value.JiraMaxRequestParallelism);
+            return Result.Ok(createdWorklogs);
         }
         catch (Exception ex)
         {

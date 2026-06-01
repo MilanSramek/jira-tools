@@ -1,4 +1,6 @@
+using FluentResults;
 using MediatR;
+using Refit;
 using Spectre.Console;
 
 namespace JiraTools.Timesheet.Import;
@@ -11,7 +13,8 @@ internal sealed class TimesheetImporterEventsHandler :
     INotificationHandler<TimesheetImportFinishedEvent>,
     INotificationHandler<TimesheetImportFailedEvent>,
     INotificationHandler<JiraTimesheetAcquiringFailedEvent>,
-    INotificationHandler<ClockifyTimesheetAcquiringFailedEvent>
+    INotificationHandler<ClockifyTimesheetAcquiringFailedEvent>,
+    INotificationHandler<JiraTimesheetPublishingFailedEvent>
 {
     private readonly TaskCompletionSource _importFinishedCompletionSource = new();
 
@@ -108,7 +111,7 @@ internal sealed class TimesheetImporterEventsHandler :
         _importFinishedCompletionSource.SetResult();
 
         AnsiConsole.MarkupLine("[red]✗[/]  Timesheet import failed");
-        AnsiConsole.MarkupLine($"[red]✗[/]  Reason: {notification.Error.Message}");
+        AnsiConsole.MarkupLine($"[red]✗[/]  Reason: {Markup.Escape(notification.Error.Message)}");
 
         return Task.CompletedTask;
     }
@@ -117,7 +120,7 @@ internal sealed class TimesheetImporterEventsHandler :
     {
         _importFinishedCompletionSource.SetResult();
 
-        WriteAcquiringFailure("Jira", notification.Errors.Select(error => error.Message));
+        WriteFailure("Jira", "timesheet acquiring failed", notification.Errors);
 
         return Task.CompletedTask;
     }
@@ -126,15 +129,25 @@ internal sealed class TimesheetImporterEventsHandler :
     {
         _importFinishedCompletionSource.SetResult();
 
-        WriteAcquiringFailure("Clockify", notification.Errors.Select(error => error.Message));
+        WriteFailure("Clockify", "timesheet acquiring failed", notification.Errors);
 
         return Task.CompletedTask;
     }
 
-    private static void WriteAcquiringFailure(string source, IEnumerable<string> errorMessages)
+    public Task Handle(JiraTimesheetPublishingFailedEvent notification, CancellationToken cancellationToken)
     {
-        var rows = errorMessages
-            .Select(message => Markup.Escape(message))
+        _importFinishedCompletionSource.SetResult();
+
+        WriteFailure("Jira", "timesheet creation failed", notification.Errors);
+
+        return Task.CompletedTask;
+    }
+
+    private static void WriteFailure(string source, string failure, IEnumerable<IError> errors)
+    {
+        var rows = errors
+            .SelectMany(GetErrorMessages)
+            .Select(Markup.Escape)
             .ToArray();
 
         var reasonLines = rows.Length == 0
@@ -142,7 +155,7 @@ internal sealed class TimesheetImporterEventsHandler :
             : new Markup(string.Join(Environment.NewLine, rows.Select(row => $"[red]-[/] {row}")));
 
         var body = new Rows(
-            new Markup($"[red]✗[/]  [bold]{Markup.Escape(source)}[/] timesheet acquiring failed"),
+            new Markup($"[red]✗[/]  [bold]{Markup.Escape(source)}[/] {Markup.Escape(failure)}"),
             new Rule("[grey]Captured errors[/]").RuleStyle("red"),
             reasonLines);
 
@@ -154,5 +167,75 @@ internal sealed class TimesheetImporterEventsHandler :
             .Expand();
 
         AnsiConsole.Write(panel);
+    }
+
+    private static IEnumerable<string> GetErrorMessages(IError error)
+    {
+        if (error is ExceptionalError { Exception: { } exception })
+        {
+            var exceptionMessages = GetExceptionMessages(exception)
+                .Where(message => !string.IsNullOrWhiteSpace(message))
+                .Distinct()
+                .ToArray();
+
+            if (exceptionMessages.Length > 0)
+            {
+                foreach (var message in exceptionMessages)
+                {
+                    yield return message;
+                }
+
+                yield break;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(error.Message))
+        {
+            yield return error.Message;
+        }
+
+        static IEnumerable<string> GetExceptionMessages(Exception exception)
+        {
+            switch (exception)
+            {
+                case AggregateException aggregateException:
+                    foreach (var aggregateInnerException in aggregateException.Flatten().InnerExceptions)
+                    {
+                        foreach (var message in GetExceptionMessages(aggregateInnerException))
+                        {
+                            yield return message;
+                        }
+                    }
+                    yield break;
+                case ApiException apiException:
+                    if (!string.IsNullOrWhiteSpace(apiException.Content))
+                    {
+                        yield return !string.IsNullOrWhiteSpace(apiException.Message)
+                            ? $"{apiException.Message}{Environment.NewLine}  {apiException.Content}"
+                            : apiException.Content;
+                        yield break;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(apiException.Message))
+                    {
+                        yield return apiException.Message;
+                    }
+                    yield break;
+                default:
+                    if (!string.IsNullOrWhiteSpace(exception.Message))
+                    {
+                        yield return exception.Message;
+                    }
+
+                    if (exception.InnerException is { } innerException)
+                    {
+                        foreach (var message in GetExceptionMessages(innerException))
+                        {
+                            yield return message;
+                        }
+                    }
+                    yield break;
+            }
+        }
     }
 }

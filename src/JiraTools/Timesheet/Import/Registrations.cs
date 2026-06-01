@@ -1,5 +1,5 @@
 using MediatR;
-
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JiraTools.Timesheet.Import;
@@ -10,6 +10,13 @@ internal static class Registrations
     {
         services.AddTransient<ImportTimesheetCommand>();
         services.AddTransient<TimesheetImporter>();
+        services.AddOptions<TimesheetImporterOptions>()
+            .Configure<IConfiguration>((options, configuration) =>
+            {
+                options.JiraMaxRequestParallelism = configuration.GetValue<int?>("Jira:MaxRequestParallelism");
+            })
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         services.AddEventHandlers();
     }
@@ -33,6 +40,8 @@ internal static class Registrations
         services.AddTransient<INotificationHandler<JiraTimesheetAcquiringFailedEvent>>(
             _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
         services.AddTransient<INotificationHandler<ClockifyTimesheetAcquiringFailedEvent>>(
+            _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
+        services.AddTransient<INotificationHandler<JiraTimesheetPublishingFailedEvent>>(
             _ => _.GetRequiredService<TimesheetImporterEventsHandler>());
     }
 }
