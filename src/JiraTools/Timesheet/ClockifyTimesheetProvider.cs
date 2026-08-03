@@ -34,13 +34,16 @@ internal sealed class ClockifyTimesheetProvider
            .Distinct()
            .ToList();
 
-        var getProjectsTask = projectIds
+        var projectsList = await projectIds
             .Select(projectId => (Func<Task<ClockifyProject>>)(() => projectApi.GetProjectByIdAsync(
                 workspaceId: workspaceId,
                 projectId: projectId,
                 cancellationToken: cancellationToken)))
             .WhenAll(options.Value.MaxRequestParallelism);
-        var getTasksTask = timeEntries
+        var projects = projectsList
+            .ToDictionary(project => project.Id);
+
+        var tasksList = await timeEntries
            .Select(_ => (_.ProjectId, _.TaskId))
            .OfType<(string ProjectId, string TaskId)>()
            .Distinct()
@@ -50,13 +53,8 @@ internal sealed class ClockifyTimesheetProvider
                 taskId: _.TaskId,
                 cancellationToken: cancellationToken)))
             .WhenAll(options.Value.MaxRequestParallelism);
-
-        await Task.WhenAll(getProjectsTask, getTasksTask);
-    
-        var tasks = getTasksTask.Result
+        var tasks = tasksList
             .ToDictionary(task => (task.ProjectId, task.Id));
-        var projects = getProjectsTask.Result
-            .ToDictionary(project => project.Id);
 
         return timeEntries
             .Select(timeEntry =>
